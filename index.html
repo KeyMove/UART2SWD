@@ -1,0 +1,1477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AXF/FLM/HEX to BIN</title>
+</head>
+<style>
+    *{
+        padding: 0;margin: 0;
+        box-sizing: border-box;
+    }
+    body{
+        overflow: hidden;
+    }
+    .mainpanel{
+        display: flex;
+        min-height: 100vh;
+        background: linear-gradient(135deg,
+        hsl(170deg,80%,70%),
+        hsl(190deg,80%,70%),
+        hsl(250deg,80%,70%),
+        hsl(320deg,80%,70%)
+        );
+        justify-content: center;
+        align-items: center;
+        background-size: 200% 200%;
+        animation: gradient-move 30s infinite alternate;
+    }
+    @keyframes gradient-move {
+        0%{background-position: 0% 0%;}
+        100%{background-position: 100% 100%;}
+    }
+    .box{
+        display: block;
+        background:rgba(255, 255, 255, .1);
+        min-height: 400px;
+        border-radius: 10px;
+        backdrop-filter: blur(10px);
+        box-shadow: 0 25px 45px rgba(0,0,0,0.1);
+    }
+    .box::before{
+        display: block;
+        content: "拖入/粘贴.axf .hex以下载";
+        text-align: center;
+        font-size: 1.5em;
+        
+    }
+    .boxitems{
+        border-top: 2px solid #000;
+        display: flex;
+        margin: 1em;
+    }
+    .vbox{
+        display: block;
+    }
+    .bt{
+        
+        width: 100%;
+        background:rgba(255, 255, 255, .2);
+        border: none;
+        padding: 10px 20px;
+        border-radius: 35px;
+        border: 1px solid rgba(255, 255, 255, .5);
+        border-right: 1px solid rgba(255, 255, 255, .2);
+        border-bottom: 1px solid rgba(255, 255, 255, .2);
+        font-size: 16px;
+        box-shadow: 0 5px 15px rgba(255, 255, 255, .1);
+        cursor: pointer;
+        margin-bottom: 5px;
+    }
+    .bt:hover{
+        box-shadow: 0 0 10px rgba(255, 255, 255, 0.3),
+        0 0 60px rgba(255, 255, 255, 0.3);
+    }
+
+</style>
+<body>
+<div class="mainpanel">
+    <div class="box">
+        <div id="dirselect" style="margin: 10px; display: flex; justify-content: center;">
+            <button id="com_open_btn" class="bt" style="border-top-right-radius: 0; border-bottom-right-radius: 0; border-right: 0;" onclick="COM.Open(bpsselect.selectedOptions[0].value)">打开串口</button>
+            <button class="bt" style="border-top-left-radius: 0; border-bottom-left-radius: 0; border-left: 0;" onclick="" style="cursor: default;">波特率
+                <select id="bpsselect" style="border: 0px;background-color: transparent;">
+                    <option>300</option>
+                    <option>125</option>
+                    <option>250</option>
+                    <option>500</option>
+                    <option>600</option>
+                    <option>1000</option>
+                    <option>1200</option>
+                    <option>2400</option>
+                    <option>4800</option>
+                    <option>9600</option>
+                    <option>14400</option>
+                    <option>19200</option>
+                    <option>38400</option>
+                    <option>57600</option>
+                    <option>115200</option>
+                    <option>128000</option>
+                    <option>230400</option>
+                    <option>256000</option>
+                    <option>460800</option>
+                    <option selected>512000</option>
+                    <option>921600</option>
+                    <option>1500000</option>
+                    <option>2000000</option>
+                </select>
+            </button>
+        </div>
+        <div style="margin: 10px; display: flex; justify-content: center;">
+            <button class="bt" onclick="" style="cursor: default;">下载算法选择
+                <select id="flmselect" style="border: 0px;background-color: transparent;width: 60%;">
+                    <option selected>PY32F002A</option>
+                </select>
+            </button>
+        </div>
+        <div class="boxitems">
+            <div class="imgpanel" onclick="fileInput.click()">
+                <input type="file" id="fileInput" accept=".axf, .flm, .hex" style="display: none;" />
+                <canvas id="canvas" class="panel" width="448" height="448" style="display: block; margin: auto; border: 2px dashed #ccc;"></canvas>
+            </div>
+            <div style="display: block;overflow: hidden;">
+                <div id="outputtext" contenteditable="true" style="max-width: 400px;" ></div>
+            </div>
+        </div>
+        <div style="margin: 10px; display: none; justify-content: center;">
+            <progress id="flmupload" value="0" max="100" style="width: 100%;"></progress>
+        </div>
+        <div>
+            <button class="bt" onclick="">选择文件夹自动下载</button>
+        </div>
+    </div>
+</div>
+</body>
+<script>
+    async function showDirectoryStructure() {
+        try {
+            const directoryHandle = root = await window.showDirectoryPicker();
+            //console.log("Directory structure:", directoryHandle);
+            
+            // 遍历文件夹结构
+            async function traverseDirectory(handle,allfile={},path='') {
+                const e=handle.entries();
+                for await(const entry of e) {
+                    //console.log(entry);
+                    if(entry[1].kind==='file'){
+                        let index=entry[0].lastIndexOf('.');
+                        let fname=index<0?entry[0]:entry[0].substring(0,index);
+                        allfile[path+entry[0]]={name:entry[0],_name:fname,dir:handle,file:entry[1],path:path};
+                    }
+                    else{
+                        //allfile[0].push({name:entry[0],dir:handle,file:entry[1]});
+                        allfile[path+entry[0]]={name:entry[0],dir:entry[1],file:entry[1]};
+                        await traverseDirectory(entry[1],allfile,path+entry[0]+'/');
+                    }
+                }
+                return allfile;
+            }
+            let files=await traverseDirectory(directoryHandle);
+            files['/']=directoryHandle;
+            console.log(files);
+            return files;
+        } catch (err) {
+            console.error(err);
+        }
+    }
+    async function checkFileUpdate(fileHandle) {
+        try {
+            const file = await fileHandle.getFile();
+            const fileModifiedDate = new Date(file.lastModified);
+            const currentDate = new Date();
+            const timeDifference = currentDate - fileModifiedDate;
+            const updateThreshold = 1000 * 60 * 5; // 5 minutes in milliseconds
+            if (timeDifference < updateThreshold) {
+                console.log(`File ${file.name} has been updated recently.`);
+                return true;
+            } else {
+                console.log(`File ${file.name} has not been updated recently.`);
+                return false;
+            }
+        } catch (error) {
+            console.error(`Error checking file update: ${error}`);
+            return false;
+        }
+    }
+</script>
+<script>
+    function download_uint8(data,name='rom.bin'){
+        if(!data)return;
+        if(Array.isArray(data)){
+            data=new Uint8Array(data);
+        }
+        const blob = new Blob([data], { type: 'application/octet-stream' });
+        const link = document.createElement('a');
+        const url = URL.createObjectURL(blob);
+        link.href = url;
+        link.download = name;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+
+    function Elfparse(elfarray){
+        if (Array.isArray(elfarray)) {
+            elfarray = new Uint8Array(elfarray);
+        }
+        let elfHeaderView = new DataView(elfarray.buffer);
+        let elfMagic = elfHeaderView.getUint32(0, true); // ELF magic number
+        if (elfMagic !== 0x464c457f) {
+            console.error('Not a valid ELF file');
+            return;
+        }
+        let elfHeader = {
+            'e_ident': elfarray.slice(0, 16),
+            'e_type': elfHeaderView.getUint16(16, true),
+            'e_machine': elfHeaderView.getUint16(18, true),
+            'e_version': elfHeaderView.getUint32(20, true),
+            'e_entry': elfHeaderView.getUint32(24, true),
+            'e_phoff': elfHeaderView.getUint32(28, true),
+            'e_shoff': elfHeaderView.getUint32(32, true),
+            'e_flags': elfHeaderView.getUint32(36, true),
+            'e_ehsize': elfHeaderView.getUint16(40, true),
+            'e_phentsize': elfHeaderView.getUint16(42, true),
+            'e_phnum': elfHeaderView.getUint16(44, true),
+            'e_shentsize': elfHeaderView.getUint16(46, true),
+            'e_shnum': elfHeaderView.getUint16(48, true),
+            'e_shstrndx': elfHeaderView.getUint16(50, true)
+        };
+        let elfProgramHeaders = [];
+        for (let i = 0; i < elfHeader.e_phnum; i++) {
+            let offset = elfHeader.e_phoff + i * elfHeader.e_phentsize;
+            let programHeader = {
+                'p_type': elfHeaderView.getUint32(offset, true),
+                'p_offset': elfHeaderView.getUint32(offset + 4, true),
+                'p_vaddr': elfHeaderView.getUint32(offset + 8, true),
+                'p_paddr': elfHeaderView.getUint32(offset + 12, true),
+                'p_filesz': elfHeaderView.getUint32(offset + 16, true),
+                'p_memsz': elfHeaderView.getUint32(offset + 20, true),
+                'p_flags': elfHeaderView.getUint32(offset + 24, true),
+                'p_align': elfHeaderView.getUint32(offset + 28, true)
+            };
+            elfProgramHeaders.push(programHeader);
+        }
+        let rom = [];
+        for (let i = 0; i < elfProgramHeaders.length; i++) {
+            if (elfProgramHeaders[i].p_type === 1 && (elfProgramHeaders[i].p_flags & 0x4) !== 0) {
+                rom.push(elfarray.slice(elfProgramHeaders[i].p_offset, elfProgramHeaders[i].p_offset + elfProgramHeaders[i].p_filesz));
+            }
+        }
+        let elfSectionHeaders = [];
+        for (let i = 0; i < elfHeader.e_shnum; i++) {
+            let offset = elfHeader.e_shoff + i * elfHeader.e_shentsize;
+            let sectionHeader = {
+                'sh_name': elfHeaderView.getUint32(offset, true),
+                'sh_type': elfHeaderView.getUint32(offset + 4, true),
+                'sh_flags': elfHeaderView.getUint32(offset + 8, true),
+                'sh_addr': elfHeaderView.getUint32(offset + 12, true),
+                'sh_offset': elfHeaderView.getUint32(offset + 16, true),
+                'sh_size': elfHeaderView.getUint32(offset + 20, true),
+                'sh_link': elfHeaderView.getUint32(offset + 24, true),
+                'sh_info': elfHeaderView.getUint32(offset + 28, true),
+                'sh_addralign': elfHeaderView.getUint32(offset + 32, true),
+                'sh_entsize': elfHeaderView.getUint32(offset + 36, true)
+            };
+            elfSectionHeaders.push(sectionHeader);
+        }
+        
+
+        let elfSectionMap={};
+        let elfSectionNames = [];
+        let shstrtab = elfarray.slice(elfSectionHeaders[elfHeader.e_shstrndx].sh_offset, elfSectionHeaders[elfHeader.e_shstrndx].sh_offset + elfSectionHeaders[elfHeader.e_shstrndx].sh_size);
+        for (let i = 0; i < elfHeader.e_shnum; i++) {
+            let offset = elfSectionHeaders[i].sh_name;
+            let name = '';
+            for (let j = offset; shstrtab[j] !== 0; j++) {
+                name += String.fromCharCode(shstrtab[j]);
+            }
+            elfSectionNames.push(name);
+            elfSectionMap[name]=elfSectionHeaders[i];
+        }
+        let elfSymbolsSection = null;
+        let elfStringSection = null;
+        let elfStringMap = {};
+        let symtabindex=-1;
+        for (let i = 0; i < elfHeader.e_shnum; i++) {
+            if (elfSectionNames[i] === '.symtab') {
+                symtabindex=i;
+                elfSymbolsSection = elfarray.slice(elfSectionHeaders[i].sh_offset, elfSectionHeaders[i].sh_offset + elfSectionHeaders[i].sh_size);
+            }
+            if (elfSectionNames[i] === '.strtab') {
+                let strtabSection = elfStringSection = elfarray.slice(elfSectionHeaders[i].sh_offset, elfSectionHeaders[i].sh_offset + elfSectionHeaders[i].sh_size);
+                for (let j = 0; j < strtabSection.length; j++) {
+                    let name = '';
+                    let startindex=j;
+                    while (strtabSection[j] !== 0) {
+                        name += String.fromCharCode(strtabSection[j]);
+                        j++;
+                    }
+                    elfStringMap[startindex]=name;
+                }
+            }
+        }
+        let elfSymbols = [];
+        let symbolNames = {};
+        if (elfSymbolsSection) {
+            let symbolSize = 16; // Assuming 32-bit ELF
+            let numSymbols = elfSymbolsSection.length / symbolSize;
+            for (let i = 0; i < numSymbols; i++) {
+                let offset = elfSectionHeaders[symtabindex].sh_offset + i * symbolSize;
+                let symbol = {
+                    'st_name':  elfHeaderView.getUint32(offset, true),
+                    'st_value': elfHeaderView.getUint32(offset + 4, true),
+                    'st_size':  elfHeaderView.getUint32(offset + 8, true),
+                    'st_info':  elfHeaderView.getUint8(offset + 12),
+                    'st_other': elfHeaderView.getUint8(offset + 13),
+                    'st_shndx': elfHeaderView.getUint16(offset + 14, true)
+                };
+                elfSymbols.push(symbol);
+            }
+            
+            for (let symbol of elfSymbols) {
+                let name = elfStringMap[symbol.st_name];
+                if (name) {
+                    symbolNames[name] = symbol;
+                }
+            }
+            console.log(symbolNames);
+            
+        }
+        if(elfSectionMap["DevDscr"]){
+            let dt=elfSectionMap["DevDscr"];
+            let constDataSection = dt.sh_offset;
+            let constDataSize = dt.sh_size;
+            let flashDevice = {
+                Vers: elfHeaderView.getUint16(constDataSection, true),
+                DevName: '',
+                DevType: elfHeaderView.getUint16(constDataSection + 2+128, true),
+                DevAdr: elfHeaderView.getUint32(constDataSection + 4+128, true),
+                szDev: elfHeaderView.getUint32(constDataSection + 8+128, true),
+                szPage: elfHeaderView.getUint32(constDataSection + 12+128, true),
+                Res: elfHeaderView.getUint32(constDataSection + 16+128, true),
+                valEmpty: elfHeaderView.getUint32(constDataSection + 20+128, true),
+                toProg: elfHeaderView.getUint32(constDataSection + 24+128, true),
+                toErase: elfHeaderView.getUint32(constDataSection + 28+128, true),
+                sectors: []
+            };
+
+            for (let i = 0; i < 128; i++) {
+                flashDevice.DevName += String.fromCharCode(elfarray[constDataSection+i+2]);
+            }
+            for (let i = 0; i < 512; i += 8) {
+                let sector = {
+                    szSector: elfHeaderView.getUint32(constDataSection + 32 + 128 + i, true),
+                    AddrSector: elfHeaderView.getUint32(constDataSection + 32 + 128 + i + 4, true)
+                };
+                if(sector.szSector===0xffffffff)break;
+                flashDevice.sectors.push(sector);
+            }
+            //let BLOB_HEADER = [0x00,0xBE,0x0A,0xE0,0x0D,0x78,0x2D,0x06,0x68,0x40,0x08,0x24,0x40,0x00,0x00,0xD3,0x58,0x40,0x64,0x1E,0xFA,0xD1,0x49,0x1C,0x52,0x1E,0x00,0x2A,0xF2,0xD1,0x70,0x47];
+            let BLOB_HEADER = [0x00,0xBE,0x0A,0xE0];
+            let HEADER_SIZE = BLOB_HEADER.length;
+            let Stack_Size = 128;
+            let entry = 0x20000000;
+            flashDevice['Init']         =entry+HEADER_SIZE+symbolNames['Init'       ].st_value;
+            flashDevice['UnInit']       =entry+HEADER_SIZE+symbolNames['UnInit'     ].st_value;
+            flashDevice['EraseChip']    =entry+HEADER_SIZE+symbolNames['EraseChip'  ].st_value;
+            flashDevice['EraseSector']  =entry+HEADER_SIZE+symbolNames['EraseSector'].st_value;
+            flashDevice['ProgramPage']  =entry+HEADER_SIZE+symbolNames['ProgramPage'].st_value;
+            let blobHeaderArray = new Uint8Array(BLOB_HEADER);
+            let romWithBlobHeader = new Uint8Array(rom[0].length + blobHeaderArray.length);
+            romWithBlobHeader.set(blobHeaderArray, 0);
+            romWithBlobHeader.set(rom[0], blobHeaderArray.length);
+            rom[0] = romWithBlobHeader;
+            flashDevice['ROM']=rom[0];
+            flashDevice['RAM']=entry;
+            flashDevice['BUFF']=(entry+rom[0].length+1023)&~1023;
+            flashDevice['BKPT']=entry+1;
+            flashDevice['RSB']=entry+rom[0].length;
+            flashDevice['RSP']=entry+rom[0].length+flashDevice.szPage+Stack_Size;
+            //console.log(flashDevice);
+            return flashDevice;
+        }
+        return rom.length>0?{ROM:rom[0]}:null;
+    }
+
+    function hex2bin(hexfile) {
+        let binArray = [];
+        let lines = hexfile.split('\n');
+        for (let line of lines) {
+            if (line.startsWith(':')) {
+                let byteCount = parseInt(line.substring(1, 3), 16);
+                let address = parseInt(line.substring(3, 7), 16);
+                let recordType = parseInt(line.substring(7, 9), 16);
+                if (recordType !== 0) continue; // Skip if record type is not data
+                let data = line.substring(9, 9 + byteCount * 2);
+                let checksum = parseInt(line.substring(9 + byteCount * 2), 16);
+                let sum = (byteCount + (address >> 8) + (address & 0xFF) + parseInt(recordType, 16));
+                checksum=((~checksum&0xff)+1)&0xff;
+                for (let i = 0; i < data.length; i += 2) {
+                    let byte = parseInt(data.substring(i, i + 2), 16);
+                    binArray.push(byte);
+                    sum += byte;
+                }
+                if ((sum & 0xFF) !== checksum) {
+                    console.error('Checksum error on line: ' + line);
+                }
+            }
+        }
+        return binArray;
+    }
+</script>
+<script>
+    class COMHelper{
+        constructor(onOpenClose,OnRecvData,OnRecvString,RecvTick=true){
+            this.OnStatusChange=onOpenClose?onOpenClose:(b,info)=>{};
+            this.OnRecvBytes=OnRecvData?OnRecvData:()=>{};
+            this.rxEnable=OnRecvString!=null;
+            this.bytesEnable=OnRecvData!=null;
+            this.OnRecvString=OnRecvString?OnRecvString:()=>{};
+            this.COM=null;
+            this.COMReader=null;
+            this.COMWriter=null;
+            this.isOpen=false;
+            this.buffer=[];
+            this.COMInfo='';
+            this.rxCache=[];
+            this.IdleTime=0;
+            
+            this.rxThCount=0;
+            this.rxPromise=null;
+            this.rxPromiseresolve=null;
+            this.rxPromisereject=null;
+            this.rxPromisecallback=null;
+            if(RecvTick){
+                setInterval(()=>{
+                    if(this.buffer.length>=this.rxThCount)
+                    {
+                        this.OnRecvBytes(this.buffer);
+                        this.buffer=[];
+                    }
+                    if(this.IdleTime)
+                        if(--this.IdleTime==0)
+                        {
+                            if(this.buffer.length!=0){
+                                this.OnRecvBytes(this.buffer);
+                                this.buffer=[];
+                            }
+                        }
+                    if(this.rxCache.length>0){
+                        this.OnRecvString(this.rxCache.join(''));
+                        this.rxCache=[];
+                    }
+                },1);
+            }
+        }
+
+        getRxData(){
+            if(this.buffer.length!=0){
+                let values=this.buffer;
+                this.buffer=[];
+                return values;
+            }
+            return null;
+        }
+
+        waitThCount(call=()=>{}){
+            if(this.rxPromise)this.rxPromisereject();
+            this.rxPromise = new Promise((resolve, reject) => {
+                this.rxPromiseresolve=resolve;
+                this.rxPromisereject=reject;
+            });
+            this.rxPromisecallback=call;
+            return this.rxPromise;
+        }
+
+        async portSelect(){
+            await navigator.serial
+            .requestPort()
+            .then((port) => {
+                this.COM=port;
+                this.COMInfo=JSON.stringify(port.getInfo());
+            })
+            .catch((e) => {
+                this.COM=null;
+                console.log(e);
+                // The user didn't select a port.
+            });
+        }
+
+        async Open(baudRate=115200,partiy='none',databits=8,stopbits=1){
+            if(this.isOpen){
+                try {
+                    this.COMReader.releaseLock();
+                    this.COMWriter.releaseLock();
+                    await this.COM.close();
+                    //await COMReader.cancel();
+                } catch (e) {
+                    console.log(e);
+                    return false;
+                    //TODO handle the exception
+                }
+                this.isOpen=false;
+                this.OnStatusChange(this.isOpen,this.COMInfo);
+                return false;
+            }
+            else{
+                await this.portSelect();
+                if(this.COM==null){
+                    console.log("打开串口失败");
+                    return false;
+                }
+            }
+            //配置串口信息
+            let cfg={
+                baudRate: baudRate,
+                parity: partiy,
+                dataBits: databits,
+                stopBits:stopbits,
+            }
+            console.log(cfg);
+            try{
+                await this.COM.open(cfg);
+            }catch(e){
+                console.log("打开串口失败");
+                this.OnStatusChange(this.isOpen,this.COMInfo);
+                return false;
+            }
+            this.COMReader = this.COM.readable.getReader();
+            this.COMWriter = this.COM.writable.getWriter();
+            
+            if(this.COMReader!=null){
+                this.isOpen=true;
+                this.OnStatusChange(this.isOpen,this.COMInfo);
+            }
+
+            try {
+                while (this.isOpen) {
+                    const { value, done } = await this.COMReader.read();
+                    if (done) {
+                        this.COMReader.releaseLock();
+                        break;
+                    }
+                    if (value) {
+                        if(this.bytesEnable){
+                            this.IdleTime=3;
+                            value.forEach(e => this.buffer.push(e));
+                            if(this.rxPromise){
+                                if(this.buffer.length>=this.rxThCount){
+                                    this.rxPromiseresolve(this.rxPromisecallback());
+                                    this.rxPromise=null;
+                                }
+                            }
+                        }
+                        if(this.rxEnable)
+                            this.rxCache.push(new TextDecoder("utf-8").decode(value));
+                    }
+                }
+            } catch (e) {
+                console.log(e);
+                // Handle |error|...
+            } finally {
+                this.COMReader.releaseLock();
+                this.COMWriter.releaseLock();
+                this.isOpen=false;
+                this.OnStatusChange(this.isOpen,this.COMInfo);
+                if(this.rxPromise){
+                    this.rxPromisereject();
+                    this.rxPromise=null;
+                }
+            }
+            return this.isOpen;
+        }
+
+        async sendString(data){
+            if(!this.isOpen)return;
+            if(data.length==0)return;
+            const encoder = new TextEncoder();
+            const encodedData = encoder.encode(data);
+            await this.COMWriter.write(Uint8Array.from(encodedData));
+        }
+        async sendBytes(data){
+            if(!this.isOpen)return;
+            if(data.length==0)return;
+            await this.COMWriter.write(Uint8Array.from(data));
+        }
+
+        async BytesMode(length){
+            this.rxThCount=length;
+            this.rxEnable=false;
+            this.bytesEnable=true;
+            this.rxCache=[];
+        }
+        async TextMode(){
+            this.rxEnable=true;
+            this.bytesEnable=false;
+            this.rxThCount=1024;
+            this.buffer=[];
+        }
+    }
+</script>
+<script>
+    class DataHelper{
+        constructor(val=null){
+            this.data=val?val:[];
+            this.rpos=0;
+            this.LE=true;
+        }
+        w32(v){
+            if(this.LE){
+                this.data.push((v>>0)&0xff);
+                this.data.push((v>>8)&0xff);
+                this.data.push((v>>16)&0xff);
+                this.data.push((v>>24)&0xff);
+            }
+            else{
+                this.data.push((v>>24)&0xff);
+                this.data.push((v>>16)&0xff);
+                this.data.push((v>>8)&0xff);
+                this.data.push((v>>0)&0xff);
+            }
+            return this;
+        }
+        w16(v){
+            if(this.LE){
+                this.data.push((v>>0)&0xff);
+                this.data.push((v>>8)&0xff);
+            }
+            else{
+                this.data.push((v>>8)&0xff);
+                this.data.push((v>>0)&0xff);
+            }
+            return this;
+        }
+        w8(v){
+            this.data.push(v&0xff);
+            return this;
+        }
+        align(pos){
+            while(this.data.length<pos)this.data.push(0);
+            return this;
+        }
+        wbuff(buff){
+            buff.forEach(e=>this.data.push(e));
+            return this;
+        }
+
+        bytes(){
+            return this.data;
+        }
+
+
+        r8(){
+            return this.data[this.rpos++];
+        }
+        r16(){
+            let v=0;
+            if(this.LE){
+                v=this.data[this.rpos++];
+                v|=this.data[this.rpos++]<<8;
+            }
+            else{
+                v=this.data[this.rpos++]<<8;
+                v|=this.data[this.rpos++];
+            }
+            return v;
+        }
+        r32(){
+            let v=0;
+            if(this.LE){
+                v=this.data[this.rpos++];
+                v|=this.data[this.rpos++]<<8;
+                v|=this.data[this.rpos++]<<16;
+                v|=this.data[this.rpos++]<<24;
+            }
+            else{
+                v=this.data[this.rpos++]<<24;
+                v|=this.data[this.rpos++]<<16;
+                v|=this.data[this.rpos++]<<8;
+                v|=this.data[this.rpos++];
+            }
+            return v;
+        }
+        rbuff(len){
+            let v=[];
+            while(len--)v.push(this.data[this.rpos++]);
+            return v;
+        }
+        rappend(v,len){
+            while(len--)v.push(this.data[this.rpos++]);
+            return v;
+        }
+        rskip(len){
+            this.rpos+=len;
+            return this;
+        }
+        
+    }
+</script>
+<script>
+
+
+
+    let lastrecv=false;
+    let lastdata=null;
+    let lastint=0;
+
+
+    function toHex(v){
+        let hex;
+        if((v&0xf)<10)hex=String.fromCharCode(48+(v&0xf));
+        else hex=String.fromCharCode(65+(v&0xf)-10);
+        v>>>=4;
+        if((v&0xf)<10)hex=String.fromCharCode(48+(v&0xf))+hex;
+        else hex=String.fromCharCode(65+(v&0xf)-10)+hex;
+        return hex;
+    }
+    function toHex32(v){
+        return toHex((v>>>24)&0xff)+toHex((v>>>16)&0xff)+toHex((v>>>8)&0xff)+toHex(v&0xff);
+    }
+    
+    function log32(v){
+        console.log(`0x${toHex32(v)}`);
+    }
+
+
+    function w8(v,nclk=false){
+        let data=[];
+        if(nclk){
+            data.push(240);
+            data.push(240);
+        }
+        for(let i=0;i<8;i++){
+            if(v&1)data.push(255);
+            else data.push(240);
+            v>>=1;
+        }
+        COM.sendBytes(data);
+    }
+    function w32(v){
+        let data=[];
+        let addr=0;
+        for(let i=0;i<32;i++){
+            if(v&1)data.push(255);
+            else data.push(240);
+            addr+=v;
+            v>>>=1;
+        }
+        COM.sendBytes(data);
+        return addr;
+    }
+
+    function wInt(addr,value,nclk=false){
+        let clk=[];
+        if(Array.isArray(addr)){
+            COM.sendBytes(addr);
+        }
+        else{
+            w8(addr);
+            clk.push(255);
+        }
+        
+        clk.push(255);
+
+        clk.push(255);
+
+        clk.push(255);
+
+        clk.push(255);
+
+        COM.sendBytes(clk);
+
+        clk=[];
+        if(w32(value)&1)
+            clk.push(255);
+        else
+            clk.push(240);
+        if(nclk){
+            for (let i = 0; i < 10; i++) {
+                clk.push(240);
+            }
+        }
+        COM.sendBytes(clk);
+    }
+
+    function rInt(addr){
+        let clk=[];
+        w8(addr);
+        addr=0;
+        clk.push(255);
+
+        clk.push(255);
+
+        clk.push(255);
+
+        //clk.push(255);
+
+        COM.sendBytes(clk);
+        
+        w32(0xffffffff);
+        
+        clk=[];
+        clk.push(255);
+
+        clk.push(255);
+
+        clk.push(255);
+        COM.sendBytes(clk);
+    }
+
+    function checkCOM(){
+        if(COM.buffer.length>=COM.rxThCount){
+            lastrecv=true;
+            lastdata=COM.getRxData();
+            lastint=readInt(lastdata);
+            return false;
+        }
+        return true;
+    }
+
+    //function waitBytes(count=46){
+    //    lastrecv=false;
+    //    COM.BytesMode(count);
+    //    return new Promise((resolve, reject) => {
+    //        let waitCOM=()=>{
+    //            if(checkCOM()){
+    //                setTimeout(waitCOM,1);
+    //                return;
+    //            }
+    //            resolve(lastdata);
+    //        }
+    //        waitCOM();
+    //    });
+    //}
+
+    function waitBytes(count=46){
+        lastrecv=false;
+        COM.BytesMode(count);
+        return COM.waitThCount(()=>{checkCOM();return lastdata;});
+    }
+
+    function waitInt(count=46){
+        lastrecv=false;
+        COM.BytesMode(count);
+        return COM.waitThCount(()=>{checkCOM();return lastint;});
+    }
+
+    function wBus(addr,value,nclk=false){
+        wInt(addr,value,nclk);
+        return waitInt();
+        return new Promise((resolve, reject) => {
+            let waitCOM=()=>{
+                if(checkCOM()){
+                    setTimeout(waitCOM,1);
+                    return;
+                }
+                resolve(lastint);
+            }
+            waitCOM();
+        });
+    }
+    
+    function rBus(addr){
+        rInt(addr);
+        return waitInt();
+        return new Promise((resolve, reject) => {
+            let waitCOM=()=>{
+                if(checkCOM()){
+                    setTimeout(waitCOM,1);
+                    return;
+                }
+                //console.log(`addr:${toHex32(addr)}:${toHex32(lastint)}`);
+                
+                resolve(lastint);
+            }
+            waitCOM();
+        });
+    }
+
+    function connect(){
+        return rst()
+        .then(e=>{log32(e);return wBus(0x81,0x1e)})
+        .then(e=>wBus(0xb1,0))
+        .then(e=>wBus(0xA9,0x50000000))
+        .then(e=>rBus(0x8D))
+        .then(e=>rBus(0x8D))
+        .then(e=>rBus(0x8D))
+        .then(e=>wBus(0xb1,0))
+        .then(e=>wBus(0xa3,0x23000012))
+        .then(e=>rBus(0x8D))
+        .then(e=>Go())
+    }
+
+    function softReset(){
+        return Halt()
+        .then(e=>WriteData(0xE000EDFC,1))
+        .then(e=>ReadData(0xE000EDF0))
+        .then(e=>WriteData(0xE000ED0C,0x05fa0004))
+        .then(e=>WriteReg(16,0x01000000))
+        .then(e=>WriteData(0xE000EDFC,(1 << 24)))
+    }
+
+    function writeMem32(addr,data){
+        let r=new DataHelper(data);
+        return wBus(0x8B,addr)
+        .then(e=>{
+            let len=(data.length+3)>>>2;
+            let p=waitBytes(46*len);
+            for (let i = 0; i < len; i++){
+                wInt(0xBB,r.r32());
+            }
+            return p;
+        })
+        .then(e=>rBus(0xBD));
+    }
+
+    function readMem32(addr,length){
+        return wBus(0x8B,addr)
+        .then(e=>rBus(0x9F))
+        .then(e=>{
+            let len=(length+3)>>>2;
+            let p=waitBytes(46*len);
+            for (let i = 0; i < len; i++)
+                rInt(0x9F);
+            return p;
+        })
+        .then(e=>readInts(e,(length+3)>>>2));
+
+    }
+
+
+    function u32t8(uint32){
+        uint32 = Array.isArray(uint32)?new Uint32Array(uint32):uint32;
+        let u8Array = new Uint8Array(uint32.length * 4);
+        for (let i = 0; i < uint32.length; i++) {
+            u8Array[i * 4] = uint32[i] & 0xFF;
+            u8Array[i * 4 + 1] = (uint32[i] >> 8) & 0xFF;
+            u8Array[i * 4 + 2] = (uint32[i] >> 16) & 0xFF;
+            u8Array[i * 4 + 3] = (uint32[i] >> 24) & 0xFF;
+        }
+        return u8Array;
+    }
+
+    function setup(){
+
+    }
+
+    function WriteData(addr,data){
+        return wBus(0x8b,addr)
+        .then(e=>wBus(0xbb,data))
+        .then(e=>rBus(0xbd));
+    }
+
+    function ReadData(addr){
+        return wBus(0x8b,addr)
+        .then(e=>rBus(0x9f))
+        .then(e=>rBus(0xbd));
+    }
+
+    function WriteReg(reg,value){
+        return WriteData(0xE000EDF8,value)
+        .then(e=>WriteData(0xE000EDF4,reg|0x10000))
+    }
+
+
+    function ReadReg(reg){
+        return WriteData(0xE000EDF4,reg)
+        .then(e=>ReadData(0xE000EDF8))
+    }
+
+    function Go(){
+        return WriteData(0xE000EDF0,0xA05F0001);
+    }
+
+    function Halt(){
+        return WriteData(0xE000EDF0,0xA05F0003);
+    }
+
+    function isHalt(){
+        return ReadData(0xE000EDF0)
+        .then(e=>((e&0x00020000)!=0));
+    }
+    
+
+
+    function AbortReset(){
+
+    }
+
+    async function AllReg(){
+        let regs=[];
+        for (let i = 0; i < 21; i++) {
+            let val= await ReadReg(i);
+            regs.push(val);
+        }
+        return regs;
+    }
+
+    function rst(){
+        w32(0xffffffff);
+        w32(0xffffffff);
+        w8(0x9e);
+        w8(0xe7);
+        w32(0xffffffff);
+        w32(0xffffffff);
+        COM.sendBytes([240,240]);
+        rInt(0xA5,0);
+        return waitInt(190);
+        return new Promise((resolve, reject) => {
+            let waitCOM=()=>{
+                if(checkCOM()){
+                    setTimeout(waitCOM,1);
+                    return;
+                }
+                resolve(lastint);
+            }
+            waitCOM();
+        });
+    }
+
+    function readInts(data,len){
+        if(data.length<46*len)return;
+        let index=data.length-35;
+        let vals=[];
+        for (let j = 0; j < len; j++) {
+            let value=0;
+            for(let i=0;i<32;i++){
+                value>>>=1;
+                if(data[index+i]>248)value|=0x80000000;
+            }
+            index-=46;
+            vals.unshift(value);
+        }
+        return vals;
+    }
+    function readInt(data){
+        if(data.length<35)return;
+        let index=data.length-35;
+        let value=0;
+        for(let i=0;i<32;i++){
+            value>>>=1;
+            if(data[index+i]>248)value|=0x80000000;
+        }
+        return value;
+    }
+    function readAck(data){
+        if(data.length<3)return;
+        let index=data.length-3;
+        let value=0;
+        if(data[index+2]>240)value|=1;
+        if(data[index+1]>240)value|=2;
+        if(data[index+0]>240)value|=4;
+        return value;
+    }
+</script>
+<script>
+    var bootpy32=[
+    0x10,0x08,0x00,0x20,0xE9,0x00,0x00,0x20,0xF1,0x00,0x00,0x20,0xF3,0x00,0x00,0x20,
+    0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+    0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0xF5,0x00,0x00,0x20,
+    0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0xF7,0x00,0x00,0x20,0xF9,0x00,0x00,0x20,
+    0xFB,0x00,0x00,0x20,0xFB,0x00,0x00,0x20,0xFB,0x00,0x00,0x20,0xFB,0x00,0x00,0x20,
+    0xFB,0x00,0x00,0x20,0xFB,0x00,0x00,0x20,0xFB,0x00,0x00,0x20,0xFB,0x00,0x00,0x20,
+    0x00,0x00,0x00,0x00,0xFB,0x00,0x00,0x20,0xFB,0x00,0x00,0x20,0x00,0x00,0x00,0x00,
+    0xFB,0x00,0x00,0x20,0xFB,0x00,0x00,0x20,0xFB,0x00,0x00,0x20,0x00,0x00,0x00,0x00,
+    0xFB,0x00,0x00,0x20,0xFB,0x00,0x00,0x20,0x00,0x00,0x00,0x00,0xFB,0x00,0x00,0x20,
+    0x00,0x00,0x00,0x00,0xFB,0x00,0x00,0x20,0xFB,0x00,0x00,0x20,0xFB,0x00,0x00,0x20,
+    0x00,0x00,0x00,0x00,0xFB,0x00,0x00,0x20,0x00,0x00,0x00,0x00,0xFB,0x00,0x00,0x20,
+    0xFB,0x00,0x00,0x20,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+    0x03,0x48,0x85,0x46,0x00,0xF0,0x1E,0xF8,0x00,0x48,0x00,0x47,0x81,0x01,0x00,0x20,
+    0x10,0x08,0x00,0x20,0x02,0x49,0x03,0x4A,0x08,0x68,0x10,0x40,0xFC,0xD0,0x70,0x47,
+    0x00,0x06,0x00,0x20,0x0F,0x00,0x00,0x00,0x04,0x48,0x80,0x47,0x04,0x48,0x00,0x47,
+    0xFE,0xE7,0xFE,0xE7,0xFE,0xE7,0xFE,0xE7,0xFE,0xE7,0xFE,0xE7,0x29,0x01,0x00,0x20,
+    0xC1,0x00,0x00,0x20,0x06,0x4C,0x01,0x25,0x06,0x4E,0x05,0xE0,0xE3,0x68,0x07,0xCC,
+    0x2B,0x43,0x0C,0x3C,0x98,0x47,0x10,0x34,0xB4,0x42,0xF7,0xD3,0xFF,0xF7,0xD4,0xFF,
+    0x24,0x03,0x00,0x20,0x44,0x03,0x00,0x20,0x70,0x47,0x30,0xB4,0x74,0x46,0x64,0x1E,
+    0x25,0x78,0x64,0x1C,0xAB,0x42,0x00,0xD2,0x1D,0x46,0x63,0x5D,0x5B,0x00,0xE3,0x18,
+    0x30,0xBC,0x18,0x47,0x02,0xE0,0x08,0xC8,0x12,0x1F,0x08,0xC1,0x00,0x2A,0xFA,0xD1,
+    0x70,0x47,0x70,0x47,0x00,0x20,0x01,0xE0,0x01,0xC1,0x12,0x1F,0x00,0x2A,0xFB,0xD1,
+    0x70,0x47,0x00,0x00,0x05,0x49,0x00,0x20,0x82,0x00,0x53,0x18,0x8A,0x58,0x5B,0x68,
+    0x13,0x60,0x80,0x1C,0xC0,0xB2,0x02,0x28,0xF6,0xD3,0x70,0x47,0x1C,0x03,0x00,0x20,
+    0xFF,0xF7,0xF0,0xFF,0x5E,0x4C,0x5D,0x48,0xA0,0x60,0x5E,0x48,0xA0,0x60,0x5E,0x48,
+    0xE0,0x60,0x5E,0x48,0xE0,0x60,0x5E,0x4D,0x00,0x26,0x5E,0x4F,0x6E,0x60,0xFF,0xF7,
+    0x99,0xFF,0x03,0x00,0xFF,0xF7,0xC1,0xFF,0x07,0x05,0x06,0x14,0x60,0x75,0x8E,0x05,
+    0xA8,0x00,0xF4,0xE7,0x00,0x20,0x31,0x46,0xAE,0x60,0xC2,0xB2,0x3A,0x54,0x40,0x1C,
+    0x51,0x18,0x80,0xB2,0xFF,0x28,0xF8,0xD9,0xA9,0x60,0x80,0x20,0x28,0x60,0xE6,0xE7,
+    0x39,0x78,0x01,0x20,0x3A,0x5C,0x51,0x18,0x40,0x1C,0x00,0x06,0x89,0xB2,0x00,0x0E,
+    0xF8,0xD1,0xA8,0x68,0x81,0x42,0x01,0xD0,0x40,0x20,0xEF,0xE7,0x01,0x20,0xE9,0x68,
+    0xC0,0x06,0x08,0x18,0x21,0x69,0xC9,0x03,0xFC,0xD4,0x61,0x69,0x46,0x4A,0x11,0x43,
+    0x61,0x61,0x00,0x21,0x52,0x11,0x04,0xE0,0x1F,0x29,0x02,0xD1,0x63,0x69,0x13,0x43,
+    0x63,0x61,0x8B,0x00,0xFB,0x58,0x08,0xC0,0x49,0x1C,0x89,0xB2,0x20,0x29,0xF3,0xD3,
+    0x21,0x69,0xC9,0x03,0xFC,0xD4,0x21,0x69,0x01,0x23,0x19,0x43,0x21,0x61,0x61,0x69,
+    0x39,0x4B,0x19,0x43,0x61,0x61,0x20,0x21,0x04,0xE0,0x3F,0x29,0x02,0xD1,0x63,0x69,
+    0x13,0x43,0x63,0x61,0x8B,0x00,0xFB,0x58,0x08,0xC0,0x49,0x1C,0x89,0xB2,0x40,0x29,
+    0xF3,0xD3,0x20,0x69,0xC0,0x03,0xFC,0xD4,0x20,0x69,0x01,0x21,0x08,0x43,0x20,0x61,
+    0x60,0x69,0x88,0x43,0x60,0x61,0xB0,0xE7,0x61,0x69,0x04,0x20,0x01,0x43,0x61,0x61,
+    0x61,0x69,0x82,0x05,0x11,0x43,0x61,0x61,0x41,0x06,0x0E,0x60,0x21,0x69,0xC9,0x03,
+    0xFC,0xD4,0x21,0x69,0x01,0x22,0x11,0x43,0x21,0x61,0x61,0x69,0x81,0x43,0x61,0x61,
+    0x9B,0xE7,0x20,0x69,0xC0,0x03,0xFC,0xD4,0x20,0x69,0x01,0x22,0x10,0x43,0x20,0x61,
+    0x20,0x6A,0xFF,0x21,0x08,0x43,0x20,0x62,0x60,0x69,0x51,0x04,0x08,0x43,0x60,0x61,
+    0x13,0x48,0x80,0x30,0x06,0x60,0x20,0x69,0xC0,0x03,0xFC,0xD4,0x20,0x69,0x10,0x43,
+    0x20,0x61,0x82,0xE7,0x20,0x69,0xC0,0x03,0xFC,0xD4,0x21,0x69,0x01,0x20,0x01,0x43,
+    0x21,0x61,0x21,0x6A,0x09,0x0A,0x09,0x02,0xAA,0x31,0x21,0x62,0x61,0x69,0x42,0x04,
+    0x11,0x43,0x61,0x61,0x06,0x49,0x80,0x31,0x0E,0x60,0x21,0x69,0xC9,0x03,0xFC,0xD4,
+    0x21,0x69,0x01,0x43,0x21,0x61,0x68,0xE7,0x2E,0x60,0x50,0xE7,0x23,0x01,0x67,0x45,
+    0x00,0x20,0x02,0x40,0xAB,0x89,0xEF,0xCD,0x3B,0x2A,0x19,0x08,0x7F,0x6E,0x5D,0x4C,
+    0x00,0x06,0x00,0x20,0x10,0x06,0x00,0x20,0x01,0x00,0x00,0x01,0x04,0x10,0x02,0x40,
+    0xFF,0x90,0xFF,0x00,0x44,0x03,0x00,0x20,0x00,0x06,0x00,0x20,0x10,0x00,0x00,0x00,
+    0x44,0x01,0x00,0x20,0x54,0x03,0x00,0x20,0x10,0x06,0x00,0x20,0x00,0x02,0x00,0x00,
+    0x54,0x01,0x00,0x20,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+    0x00,0x00,0x00,0x00,
+    ];
+
+    async function downloadbin(bin,bootloader=bootpy32) {
+        if(!bin)return;
+        const ADDR_STAS= 0x20000600;
+        const ADDR_XOR = 0x20000604;
+        const ADDR_SUM = 0x20000608;
+        const ADDR_ADDR= 0x2000060C;
+        const ADDR_DATA= 0x20000610;
+
+        await connect()
+        .then(e=>connect())
+        .then(e=>softReset())
+        .then(e=>writeMem32(0x20000000,bootloader))
+        .then(e=>WriteReg(15,0x20000000))
+        .then(e=>WriteData(0xE000ED08,0x20000000))
+        .then(e=>Go())
+        .then(e=>WriteData(ADDR_ADDR,0xffffffff))
+        .then(e=>WriteData(ADDR_STAS,3))
+        for (let i = 0; i < 16; i++) {
+            let sta=await ReadData(ADDR_STAS);
+            console.log(`i:${i} sta:${sta}`);
+            if(sta&0x80)break;
+            if(i==15)return;
+        }
+        let count=bin.length;
+        let index=0;
+        console.log(`count:${count}`);
+        while(count){
+            let chunkSize = count>=256?256:count;
+            let chunk = bin.slice(0, chunkSize);
+            bin = bin.slice(chunkSize);
+            count -= chunkSize;
+            let sum=0;
+            if (chunk.length<256){
+                if(!Array.isArray(chunk)){
+                    let carr=[];
+                    carr.push(...chunk);
+                    chunk=carr;
+                }
+                while(chunk.length < 256)chunk.push(0xFF);
+            }
+            for(let i = 0; i < chunk.length; i++) {
+                sum += chunk[i];
+            }
+            console.log(`count:${count} chunk:${chunk.length} index:${index}`);
+            await writeMem32(ADDR_DATA, chunk)
+            .then(e=>WriteData(ADDR_SUM,sum))
+            .then(e=>WriteData(ADDR_ADDR,index))
+            .then(e=>WriteData(ADDR_STAS,2))
+            for (let i = 0; i < 16; i++) {
+                let sta=await ReadData(ADDR_STAS);
+                console.log(`i:${i} sta:${sta}`);
+                if(sta&0x80)break;
+                if(i==15)return;
+            }
+            index+=chunkSize;
+        }
+        await connect()
+        .then(e=>connect())
+        .then(e=>softReset())
+        .then(e=>Go());
+    }
+
+
+    async function downloadbin_device(bin=null,device=null) {
+        if(!bin)return;
+        if(!device)return;
+        await connect()
+        .then(e=>connect())
+        .then(e=>softReset());
+        let index=0;
+        let count=device.ROM.length;
+        do{
+            let ct=count>=1024?1024:count;
+            let chunk = device.ROM.slice(index, index + ct);
+            await writeMem32(device.RAM + index, chunk);
+            count-=ct;
+            index+=ct;
+        }while(count);
+        
+        index=0;
+        count=bin.length;
+        console.log(`count:${count}`);
+        let exec=async (func,r0=0,r1=0,r2=0,r3=0,databuff=device.RSB,sp=device.BUFF-4,bkpt=device.BKPT)=>{
+            await WriteReg(0,r0)
+            .then(e=>WriteReg(1,r1))
+            .then(e=>WriteReg(2,r2))
+            .then(e=>WriteReg(3,r3))
+            .then(e=>WriteReg(9,databuff))
+            .then(e=>WriteReg(13,sp))
+            .then(e=>WriteReg(14,bkpt))
+            .then(e=>WriteReg(15,func))
+            .then(e=>WriteReg(16,0x01000000))
+            .then(e=>Go());
+            for (let i = 0; i < 160; i++)if(await isHalt())break;
+        }
+
+        await exec(device.Init);
+        await exec(device.EraseChip);
+        let pagesize=1024;
+        let binsize=count;
+        while(count){
+            
+            let chunkSize = count>=pagesize?pagesize:count;
+            let chunk = bin.slice(0, chunkSize);
+            bin = bin.slice(chunkSize);
+            count -= chunkSize;
+            console.log(`count:${count} chunk:${chunk.length} index:${index} rate:${index/binsize}`);
+            await writeMem32(device.BUFF,chunk)
+            .then(e=>exec(device.ProgramPage,index+device.DevAdr,chunkSize,device.BUFF));
+            index+=chunkSize;
+            setUploadRate(index/binsize);
+        }
+        setUploadRate(-1);
+        await connect()
+        .then(e=>connect())
+        .then(e=>softReset())
+        .then(e=>Go());
+    }
+
+
+    async function syswrite(func,r0=0,r1=0,r2=0,r3=0,databuff=0x20000400,sp=0x200003FC,bkpt=0x20000001){
+        await WriteReg(0,r0)
+        .then(e=>WriteReg(1,r1))
+        .then(e=>WriteReg(2,r2))
+        .then(e=>WriteReg(3,r3))
+        .then(e=>WriteReg(9,databuff))
+        .then(e=>WriteReg(13,sp))
+        .then(e=>WriteReg(14,bkpt))
+        .then(e=>WriteReg(15,func))
+        .then(e=>WriteReg(16,0x01000000));
+    }
+    
+    let syscall=async (func,r0=0,r1=0,r2=0,r3=0,sp=0x200003FC,bkpt=0x20000001)=>{
+        await WriteReg(0,r0)
+        .then(e=>WriteReg(1,r1))
+        .then(e=>WriteReg(2,r2))
+        .then(e=>WriteReg(3,r3))
+        //.then(e=>WriteReg(9,device.RSB))
+        .then(e=>WriteReg(13,sp))
+        .then(e=>WriteReg(14,bkpt))
+        .then(e=>WriteReg(15,func))
+        .then(e=>Go());
+        for (let i = 0; i < 160; i++)if(await isHalt())break;
+    }
+
+    function viewhex(array,hex=true){
+        let str=[];
+        str.push('HEX   |')
+        for (let i = 0; i < 16; i++) {
+            str.push(hex && `${toHex(i&0xff)} ` || `${i.toString().padStart(2, '0')} `);
+        }
+        let newline=true;
+        let lineindex=0;
+        for (let i = 0; i < array.length; i++) {
+            
+            if(i%16==0){
+                newline=true;
+            }
+            if(newline){
+                newline=false;
+                let it=hex && (toHex((i>>>8)&0xff)+toHex(i&0xff)) || (''+i);
+                while(it.length<5)it+=' ';
+                str.push(`\r\n${it} |`);
+            }
+            str.push(`${toHex(array[i]&0xff)} `);
+        }
+        return str.join('');
+    }
+
+
+    async function viewregs(){
+        let str=[];
+        for (let i = 0; i < 17; i++) {
+            let v=await ReadReg(i);
+            if(i<13){
+                let r=`R`+i;
+                if(i<10)r+=' '
+                str.push(`${r} = 0x${toHex32(v)}\r\n`);
+            }
+            else{
+                switch(i){
+                    case 13:str.push(`SP  = 0x${toHex32(v)}\r\n`);break;
+                    case 14:str.push(`LR  = 0x${toHex32(v)}\r\n`);break;
+                    case 15:str.push(`PC  = 0x${toHex32(v)}\r\n`);break;
+                    case 16:str.push(`xPSR= 0x${toHex32(v)}\r\n`);break;
+                }
+            }
+        }
+        return str.join('');
+    }
+
+    function viewlist32(array){
+        let newline=false;
+        let str=[];
+        for (let i = 0; i < array.length; i++) {
+            if(i!=0&&i%4==0){
+                newline=true;
+            }
+            if(newline){
+                newline=false;
+                str.push(`\r\n`);
+            }
+            str.push(`0x${toHex32(array[i])},`);
+        }
+        return str.join('');
+    }
+
+
+    async function SAVE_ROM(count,addr=0x8000000){
+        let index=0;
+        let vals=new Uint8Array(count);
+        do{
+            let ct=count>=1024?1024:count;
+            let mem=await readMem32(addr + index,ct).then(e=>u32t8(e));
+            vals.set(mem, index);
+            count-=ct;
+            index+=ct;
+        }while(count);
+        
+        download_uint8(vals,'ROM.bin');
+    }
+
+    var download_device={PY32F002A:downloadbin};
+    var download_selectDevice=download_device['PY32F002A'];
+    var download_info=null;
+    var download_flm=null;
+</script>
+<script>
+    var COM=null;
+    var output=document.getElementById('outputtext');
+    var wbt=document.getElementById('wdbt');
+    var wrg=document.getElementById('wdrang');
+    var fileInput=document.getElementById('fileInput');
+    var dirselect=document.getElementById('dirselect');
+    var flmlist=document.getElementById('flmselect');
+    var flmupload=document.getElementById('flmupload');
+
+    function newflm(flmname){
+        let exists = false;
+        for (let i = 0; i < flmlist.options.length; i++) {
+            if (flmlist.options[i].text === flmname) {
+                exists = true;
+                break;
+            }
+        }
+        if (!exists) {
+            let opt = document.createElement('option');
+            opt.text = flmname;
+            flmlist.appendChild(opt);
+        }
+    }
+
+    function setUploadRate(rate){
+        if(rate<0){
+            flmupload.parentElement.style.display = 'none';
+        } else {
+            flmupload.parentElement.style.display = 'flex';
+        }
+        flmupload.value = rate*100;
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        flmlist.addEventListener('change', function() {
+            download_selectDevice = download_device[flmlist.value];
+        });
+        if(navigator==null||navigator.serial==null){
+            alert("不支持Web Serial");
+            //return;
+        }
+        navigator.serial.addEventListener("connect", (e) => {
+        // Connect to `e.target` or add it to a list of available ports.
+            console.log("串口已连接");
+        });
+
+        navigator.serial.addEventListener("disconnect", (e) => {
+        // Remove `e.target` from the list of available ports.
+            console.log("串口已断开");
+        });
+
+        navigator.serial.getPorts().then((ports) => {
+        // Initialize the list of available ports with `ports` on page load.
+            console.log(ports);
+        });
+
+        let sendbtn=document.getElementById('com_open_btn');
+        COM=new COMHelper((s,i)=>{
+            if(s)
+                sendbtn.innerText="关闭串口";
+            else
+                sendbtn.innerText="打开串口";
+        },
+        (data)=>{
+            
+        },
+        (data)=>{
+            output.value+=data;
+        },false);
+        COM.BytesMode(190);
+
+
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+
+        
+        let imgfile=async function(file) {
+            if (!file) return;
+            let extension = file.name.split('.').pop().toLowerCase();
+            let reader = new FileReader();
+            reader.onload = function(e) {
+                if (extension === 'hex') {
+                    download_info = {ROM:hex2bin(e.target.result)}
+                }
+                else if (extension === 'bin') {
+                    download_info = Array.from(new Uint8Array(e.target.result));
+                }
+                else if (extension === 'axf') {
+                    download_info = Elfparse(new Uint8Array(e.target.result));
+                }
+                else if (extension === 'flm') {
+                    let info = Elfparse(new Uint8Array(e.target.result));
+                    download_device[file.name]=(bin)=>downloadbin_device(bin,info);
+                    download_info=null;
+                    download_flm=info;
+                    newflm(file.name);
+                }
+                console.log(download_info);
+                
+                download_info && download_info.ROM && (download_info.ROM.length>0) && download_selectDevice && download_selectDevice(download_info.ROM);
+            };
+            if (extension === 'hex') {
+                reader.readAsText(file);
+            } else {
+                reader.readAsArrayBuffer(file);
+            }
+        }
+        
+        document.addEventListener('dragover', function(e) {
+            e.preventDefault();
+        });
+
+        document.addEventListener('paste', function(e) {
+            e.preventDefault();
+            const items = e.clipboardData.items;
+            if (!items || items.length === 0) return;
+            const item = items[0];
+            if (item.kind === 'file') {
+                const file = item.getAsFile();
+                imgfile(file);
+            }
+        });
+
+        document.addEventListener('drop', function(e) {
+            e.preventDefault();
+            const file = e.dataTransfer.files[0];
+            imgfile(file);
+        });
+
+        fileInput.onchange=e=>{
+            const file = e.target.files[0];
+            imgfile(file);
+        }
+    });
+</script>
+</html>
