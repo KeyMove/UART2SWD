@@ -704,7 +704,7 @@
     let lastrecv=false;
     let lastdata=null;
     let lastint=0;
-
+    var pwmrate=252;
 
     function toHex(v){
         let hex;
@@ -879,7 +879,10 @@
 
     function connect(){
         return rst()
-        .then(e=>{log32(e);return wBus(0x81,0x1e)})
+        .then(e=>{
+            log32(e);
+            pwmrate = (lastdata[190]<252||lastdata[189]<252) && 248 || 252;
+            return wBus(0x81,0x1e)})
         .then(e=>wBus(0xb1,0))
         .then(e=>wBus(0xA9,0x50000000))
         .then(e=>rBus(0x8D))
@@ -1018,6 +1021,7 @@
         });
     }
 
+    
     function readInts(data,len){
         if(data.length<46*len)return;
         let index=data.length-35;
@@ -1026,7 +1030,7 @@
             let value=0;
             for(let i=0;i<32;i++){
                 value>>>=1;
-                if(data[index+i]>248)value|=0x80000000;
+                if(data[index+i]>pwmrate)value|=0x80000000;
             }
             index-=46;
             vals.unshift(value);
@@ -1039,19 +1043,19 @@
         let value=0;
         for(let i=0;i<32;i++){
             value>>>=1;
-            if(data[index+i]>248)value|=0x80000000;
+            if(data[index+i]>pwmrate)value|=0x80000000;
         }
         return value;
     }
-    function readAck(data){
-        if(data.length<3)return;
-        let index=data.length-3;
-        let value=0;
-        if(data[index+2]>240)value|=1;
-        if(data[index+1]>240)value|=2;
-        if(data[index+0]>240)value|=4;
-        return value;
-    }
+    //function readAck(data){
+    //    if(data.length<3)return;
+    //    let index=data.length-3;
+    //    let value=0;
+    //    if(data[index+2]>240)value|=1;
+    //    if(data[index+1]>240)value|=2;
+    //    if(data[index+0]>240)value|=4;
+    //    return value;
+    //}
 </script>
 <script>
     var bootpy32=[
@@ -1204,11 +1208,12 @@
             .then(e=>WriteReg(15,func))
             .then(e=>WriteReg(16,0x01000000))
             .then(e=>Go());
-            for (let i = 0; i < 160; i++)if(await isHalt())break;
+            for (let i = 0; i < 160; i++)if(await isHalt())return true;
+            return false;
         }
 
-        await exec(device.Init);
-        await exec(device.EraseChip);
+        if(!await exec(device.Init))return;
+        if(!await exec(device.EraseChip))return;
         let pagesize=1024;
         let binsize=count;
         while(count){
@@ -1218,8 +1223,9 @@
             bin = bin.slice(chunkSize);
             count -= chunkSize;
             console.log(`count:${count} chunk:${chunk.length} index:${index} rate:${index/binsize}`);
-            await writeMem32(device.BUFF,chunk)
+            let wr=await writeMem32(device.BUFF,chunk)
             .then(e=>exec(device.ProgramPage,index+device.DevAdr,chunkSize,device.BUFF));
+            if(!wr)return;
             index+=chunkSize;
             setUploadRate(index/binsize);
         }
