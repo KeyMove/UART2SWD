@@ -1480,4 +1480,48 @@
         }
     });
 </script>
+<script>
+    function floatball(path='interface.jpg'){
+        const css=`.floating-ball {
+            width: 40px;
+            height: 40px;
+            background-color: #fff1;
+            border-radius: 50%;
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: transform 0.3s ease;
+            cursor: pointer;
+        }
+        .floating-ball img {
+            position: absolute;
+            right: 10px;
+            bottom: 10px;
+            width: 0;
+            height: 0;
+            opacity: 0;
+            transition: width 0.3s ease, height 0.3s ease, opacity 0.3s ease;
+        }
+        .floating-ball:hover img {
+            width: 500px;
+            height: auto;
+            opacity: 1;
+        }
+        .floating-ball:hover {
+            transform: scale(1.2);
+        }`;
+        let style = document.createElement('style');
+        style.type = 'text/css';
+        style.innerHTML=css;
+        document.getElementsByTagName('head')[0].appendChild(style);
+        let div=document.createElement('div');
+        div.classList.add('floating-ball');
+        div.innerHTML=`🔌<img src="${path}" alt="Hover Image">`;
+        document.body.append(div)
+    }
+    floatball();
+</script>
 </html>
